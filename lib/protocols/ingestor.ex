@@ -191,7 +191,7 @@ defmodule Shirath.Ingestor do
   defp write_local(tbl, contents) do
     IO.inspect("write local")
     file = "#{System.os_time()}_#{tbl}.json"
-    path = "mc_data/#{file}"
+    path = "data_files/#{file}"
 
     with :ok <- File.mkdir_p(Path.dirname(path)) do
       File.write(path, contents)

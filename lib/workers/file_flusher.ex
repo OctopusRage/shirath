@@ -6,7 +6,7 @@ defmodule Shirath.Workers.FileFlusher do
 
   @impl Oban.Worker
   def perform(%Oban.Job{}) do
-    Path.wildcard("mc_data/*")
+    Path.wildcard("data_files/*")
     |> Enum.group_by(fn e ->
       e = Path.basename(e)
       prefix = e |> String.split("_") |> List.first()
@@ -27,6 +27,7 @@ defmodule Shirath.Workers.FileFlusher do
     |> Enum.map(fn e ->
       KV.delete("mat_view_lock:#{e}")
     end)
+
     :ok
   end
 end

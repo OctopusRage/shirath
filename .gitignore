@@ -33,9 +33,9 @@ shirath-*.tar
 /named_collections/
 docker-compose.yml
 .elixir_ls
-/mc-data/
+
 # CDC data files
-mc_data/
+data_files/*
 
 # Local mapper config (contains project-specific mappings)
 mapper.json
