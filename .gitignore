@@ -36,6 +36,7 @@ docker-compose.yml
 
 # CDC data files
 data_files/*
+!data_files/blank.md
 
 # Local mapper config (contains project-specific mappings)
 mapper.json
