@@ -40,3 +40,4 @@ data_files/*
 
 # Local mapper config (contains project-specific mappings)
 mapper.json
+.claude
