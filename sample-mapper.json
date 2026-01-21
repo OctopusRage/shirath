@@ -1,0 +1,30 @@
+{
+    "data": [
+        {
+            "source_table": "students",
+            "dest_table": "students"
+        },
+        {
+            "source_table": "wa_channels",
+            "dest_table": "channels",
+            "remap": {
+                "id": "{id}",
+                "source": "wa",
+                "name": "{name}",
+                "token": "{token}",
+                "created_at": "{created_at}"
+            }
+        },
+        {
+            "source_table": "fb_channels",
+            "dest_table": "channels",
+            "remap": {
+                "id": "{id}",
+                "source": "fb",
+                "name": "{page_name}",
+                "token": "{access_token}",
+                "created_at": "{created_at}"
+            }
+        }
+    ]
+}

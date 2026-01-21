@@ -1,0 +1,35 @@
+{
+    "data": [
+        {
+            "source_table": "users",
+            "dest_table": "users"
+        },
+        {
+            "source_table": "orders",
+            "dest_table": "orders"
+        },
+        {
+            "source_table": "products",
+            "dest_table": "product_analytics",
+            "remap": {
+                "id": "{id}",
+                "product_name": "{name}",
+                "price": "{price}",
+                "category": "{category}",
+                "created_at": "{created_at}",
+                "updated_at": "{updated_at}"
+            }
+        },
+        {
+            "source_table": "events",
+            "dest_table": "event_logs",
+            "remap": {
+                "event_id": "{id}",
+                "event_type": "{type}",
+                "payload": "{data}",
+                "source": "postgresql",
+                "timestamp": "{created_at}"
+            }
+        }
+    ]
+}

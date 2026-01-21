@@ -1,0 +1,25 @@
+{
+    "before": null,
+    "after": {
+        "id": 1,
+        "first_name": "Anne",
+        "last_name": "Kretchmar",
+        "email": "annek@noanswer.org"
+    },
+    "source": {
+        "version": "2.5.0.Alpha2",
+        "connector": "postgresql",
+        "name": "PostgreSQL_server",
+        "ts_ms": 1559033904863,
+        "snapshot": true,
+        "db": "postgres",
+        "sequence": "[\"24023119\",\"24023128\"]",
+        "schema": "public",
+        "table": "customers",
+        "txId": 555,
+        "lsn": 24023128,
+        "xmin": null
+    },
+    "op": "c",
+    "ts_ms": 1559033904863
+}

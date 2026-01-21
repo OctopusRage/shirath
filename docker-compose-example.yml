@@ -1,0 +1,43 @@
+version: "3.8"
+services:
+  shirath:
+    image: shirath:latest
+    container_name: shirath
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      CH_CONNECTION: "http://default:password@clickhouse:8123/analytics"
+      DB_USERNAME: "postgres"
+      DB_PASSWORD: "postgres"
+      DB_NAME: "your_database"
+      DB_HOST: "host.docker.internal"
+      CDC_PUBLICATION: "your_publication"
+      CDC_SLOT: "your_slot"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  clickhouse_data:
