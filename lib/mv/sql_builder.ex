@@ -56,62 +56,42 @@ defmodule Shirath.MV.SQLBuilder do
   end
 
   @doc """
-  Generate query to get max ID from source table (for cutoff).
+  Generate query to get max value from source table for the primary key column (for cutoff).
+  Always uses descending order for backfill.
   """
-  def get_max_id_query(source_table, id_column \\ "id") do
-    "SELECT max(#{id_column}) as max_id FROM #{source_table}"
+  def get_max_pk_query(source_table, primary_key) do
+    "SELECT max(#{primary_key}) as max_pk FROM #{source_table}"
   end
 
   @doc """
-  Generate query to get row count from source table.
+  Generate query to get row count from source table up to cutoff.
   """
-  def get_row_count_query(source_table) do
-    "SELECT count() as cnt FROM #{source_table}"
+  def get_row_count_query(source_table, primary_key, cutoff_value) do
+    "SELECT count() as cnt FROM #{source_table} WHERE #{primary_key} <= #{format_value(cutoff_value)}"
   end
 
   @doc """
-  Generate backfill INSERT query with batching.
-  Inserts aggregated data from source table into target table.
+  Generate a backfill query that processes data in batches.
+  Uses descending order on primary_key for pagination.
   """
-  def backfill_query(config, cutoff_id, last_processed_id \\ nil, batch_size \\ 10_000) do
-    select_query = build_select_query(config)
-    source_table = config["source_table"]
-
-    # Extract the base query and add WHERE clause for batching
-    # We need to modify the query to add ID filtering
-    _where_clause = build_backfill_where(cutoff_id, last_processed_id)
-
-    # Wrap the original query to add filtering
-    """
-    INSERT INTO #{config["target_table"]}
-    SELECT * FROM (
-      #{select_query}
-    ) AS subq
-    WHERE EXISTS (
-      SELECT 1 FROM #{source_table}
-      WHERE id <= #{cutoff_id}
-      #{if last_processed_id, do: "AND id < #{last_processed_id}", else: ""}
-      LIMIT #{batch_size}
-    )
-    """
-    |> String.trim()
-  end
-
-  @doc """
-  Generate a simpler backfill query that processes data in batches by ID range.
-  This approach reads source data with ID filtering, then aggregates.
-  """
-  def backfill_batch_query(config, cutoff_id, last_processed_id, batch_size) do
+  def backfill_batch_query(config, primary_key, cutoff_value, last_processed_value, batch_size) do
     source_table = config["source_table"]
     target_table = config["target_table"]
     select_query = config["select_query"]
 
-    # Replace {source_table} with a subquery that filters by ID
+    # Build WHERE clause for pagination (descending order)
+    where_clause =
+      if last_processed_value do
+        "WHERE #{primary_key} <= #{format_value(cutoff_value)} AND #{primary_key} < #{format_value(last_processed_value)}"
+      else
+        "WHERE #{primary_key} <= #{format_value(cutoff_value)}"
+      end
+
+    # Replace {source_table} with a subquery that filters by primary key
     filtered_source = """
     (SELECT * FROM #{source_table}
-     WHERE id <= #{cutoff_id}
-     #{if last_processed_id, do: "AND id < #{last_processed_id}", else: ""}
-     ORDER BY id DESC
+     #{where_clause}
+     ORDER BY #{primary_key} DESC
      LIMIT #{batch_size})
     """
 
@@ -125,15 +105,28 @@ defmodule Shirath.MV.SQLBuilder do
   end
 
   @doc """
-  Generate query to get the minimum ID from the current batch (for pagination).
+  Generate query to get the minimum primary key value from the current batch (for pagination).
+  Since we're going in descending order, min gives us the last value processed.
   """
-  def get_batch_min_id_query(source_table, cutoff_id, last_processed_id, batch_size) do
+  def get_batch_min_pk_query(
+        source_table,
+        primary_key,
+        cutoff_value,
+        last_processed_value,
+        batch_size
+      ) do
+    where_clause =
+      if last_processed_value do
+        "WHERE #{primary_key} <= #{format_value(cutoff_value)} AND #{primary_key} < #{format_value(last_processed_value)}"
+      else
+        "WHERE #{primary_key} <= #{format_value(cutoff_value)}"
+      end
+
     """
-    SELECT min(id) as min_id FROM (
-      SELECT id FROM #{source_table}
-      WHERE id <= #{cutoff_id}
-      #{if last_processed_id, do: "AND id < #{last_processed_id}", else: ""}
-      ORDER BY id DESC
+    SELECT min(#{primary_key}) as min_pk FROM (
+      SELECT #{primary_key} FROM #{source_table}
+      #{where_clause}
+      ORDER BY #{primary_key} DESC
       LIMIT #{batch_size}
     )
     """
@@ -204,11 +197,7 @@ defmodule Shirath.MV.SQLBuilder do
     |> String.replace("{source_table}", config["source_table"])
   end
 
-  defp build_backfill_where(cutoff_id, nil) do
-    "id <= #{cutoff_id}"
-  end
-
-  defp build_backfill_where(cutoff_id, last_processed_id) do
-    "id <= #{cutoff_id} AND id < #{last_processed_id}"
-  end
+  # Format value for SQL - handle strings vs numbers
+  defp format_value(value) when is_binary(value), do: "'#{value}'"
+  defp format_value(value), do: to_string(value)
 end

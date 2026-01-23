@@ -2,7 +2,7 @@ defmodule Shirath.MV.MVManager do
   @moduledoc """
   Manages materialized view lifecycle:
   - Creation (with ON CLUSTER support)
-  - Two-phase backfill
+  - Two-phase backfill (always descending order)
   - Status tracking
   """
 
@@ -107,17 +107,19 @@ defmodule Shirath.MV.MVManager do
   end
 
   @doc """
-  Get cutoff ID and total rows for backfill.
+  Get cutoff value and total rows for backfill.
   This should be called BEFORE creating the MV.
+  Uses the configured primary_key column.
   """
   def setup_backfill(%MVJob{} = job) do
     source_table = job.config["source_table"]
+    primary_key = job.primary_key || "id"
 
-    with {:ok, cutoff_id} <- get_max_id(source_table),
-         {:ok, total_rows} <- get_row_count(source_table, cutoff_id) do
+    with {:ok, cutoff_value} <- get_max_pk(source_table, primary_key),
+         {:ok, total_rows} <- get_row_count(source_table, primary_key, cutoff_value) do
       job
       |> MVJob.backfill_setup_changeset(%{
-        cutoff_id: cutoff_id,
+        cutoff_id: cutoff_value,
         total_rows: total_rows,
         status: "backfilling"
       })
@@ -127,18 +129,33 @@ defmodule Shirath.MV.MVManager do
 
   @doc """
   Fetch a batch of data and insert into target table.
+  Always processes in descending order on primary_key.
   Returns {:ok, :continue} if more data, {:ok, :complete} if done.
   """
   def process_backfill_batch(%MVJob{} = job, batch_size \\ 10_000) do
     config = job.config
-    cutoff_id = job.cutoff_id
-    last_processed_id = job.last_processed_id
+    primary_key = job.primary_key || "id"
+    cutoff_value = job.cutoff_id
+    last_processed_value = job.last_processed_id
 
-    # Get the min ID from this batch (for pagination)
-    with {:ok, batch_min_id} <-
-           get_batch_min_id(config["source_table"], cutoff_id, last_processed_id, batch_size),
-         :ok <- execute_backfill_batch(config, cutoff_id, last_processed_id, batch_size) do
-      if batch_min_id == nil do
+    # Get the min pk from this batch (for pagination in descending order)
+    with {:ok, batch_min_pk} <-
+           get_batch_min_pk(
+             config["source_table"],
+             primary_key,
+             cutoff_value,
+             last_processed_value,
+             batch_size
+           ),
+         :ok <-
+           execute_backfill_batch(
+             config,
+             primary_key,
+             cutoff_value,
+             last_processed_value,
+             batch_size
+           ) do
+      if batch_min_pk == nil do
         # No more data
         {:ok, :complete}
       else
@@ -148,7 +165,7 @@ defmodule Shirath.MV.MVManager do
         job
         |> MVJob.progress_changeset(%{
           processed_rows: min(processed, job.total_rows),
-          last_processed_id: batch_min_id
+          last_processed_id: batch_min_pk
         })
         |> ObanRepo.update()
 
@@ -283,6 +300,7 @@ defmodule Shirath.MV.MVManager do
 
   defp create_job(config, cluster_name) do
     target_table = config["target_table"] || "#{config["name"]}_data"
+    primary_key = config["primary_key"] || "id"
 
     distributed_table =
       if cluster_name, do: config["distributed_table"] || "#{config["name"]}_dist", else: nil
@@ -292,6 +310,7 @@ defmodule Shirath.MV.MVManager do
       source_table: config["source_table"],
       target_table: target_table,
       distributed_table: distributed_table,
+      primary_key: primary_key,
       cluster_name: cluster_name,
       status: "pending",
       config: Map.merge(config, %{"target_table" => target_table})
@@ -302,12 +321,12 @@ defmodule Shirath.MV.MVManager do
     |> ObanRepo.insert()
   end
 
-  defp get_max_id(source_table) do
-    sql = SQLBuilder.get_max_id_query(source_table)
+  defp get_max_pk(source_table, primary_key) do
+    sql = SQLBuilder.get_max_pk_query(source_table, primary_key)
 
     case ClickhouseMaster.select(sql) do
-      {:ok, %{rows: [[max_id]]}} when not is_nil(max_id) ->
-        {:ok, max_id}
+      {:ok, %{rows: [[max_pk]]}} when not is_nil(max_pk) ->
+        {:ok, max_pk}
 
       {:ok, %{rows: [[nil]]}} ->
         {:ok, 0}
@@ -316,12 +335,12 @@ defmodule Shirath.MV.MVManager do
         {:ok, 0}
 
       {:error, reason} ->
-        {:error, {:get_max_id_failed, reason}}
+        {:error, {:get_max_pk_failed, reason}}
     end
   end
 
-  defp get_row_count(source_table, cutoff_id) do
-    sql = "SELECT count() as cnt FROM #{source_table} WHERE id <= #{cutoff_id}"
+  defp get_row_count(source_table, primary_key, cutoff_value) do
+    sql = SQLBuilder.get_row_count_query(source_table, primary_key, cutoff_value)
 
     case ClickhouseMaster.select(sql) do
       {:ok, %{rows: [[count]]}} -> {:ok, count}
@@ -330,19 +349,32 @@ defmodule Shirath.MV.MVManager do
     end
   end
 
-  defp get_batch_min_id(source_table, cutoff_id, last_processed_id, batch_size) do
+  defp get_batch_min_pk(source_table, primary_key, cutoff_value, last_processed_value, batch_size) do
     sql =
-      SQLBuilder.get_batch_min_id_query(source_table, cutoff_id, last_processed_id, batch_size)
+      SQLBuilder.get_batch_min_pk_query(
+        source_table,
+        primary_key,
+        cutoff_value,
+        last_processed_value,
+        batch_size
+      )
 
     case ClickhouseMaster.select(sql) do
-      {:ok, %{rows: [[min_id]]}} -> {:ok, min_id}
+      {:ok, %{rows: [[min_pk]]}} -> {:ok, min_pk}
       {:ok, %{rows: []}} -> {:ok, nil}
-      {:error, reason} -> {:error, {:get_batch_min_id_failed, reason}}
+      {:error, reason} -> {:error, {:get_batch_min_pk_failed, reason}}
     end
   end
 
-  defp execute_backfill_batch(config, cutoff_id, last_processed_id, batch_size) do
-    sql = SQLBuilder.backfill_batch_query(config, cutoff_id, last_processed_id, batch_size)
+  defp execute_backfill_batch(config, primary_key, cutoff_value, last_processed_value, batch_size) do
+    sql =
+      SQLBuilder.backfill_batch_query(
+        config,
+        primary_key,
+        cutoff_value,
+        last_processed_value,
+        batch_size
+      )
 
     case ClickhouseMaster.query(sql) do
       {:ok, _} -> :ok

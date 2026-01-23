@@ -18,10 +18,12 @@ defmodule Shirath.Controllers.MVController do
       {"name": "cnt", "type": "UInt64"}
     ],
     "select_query": "SELECT category, count() as cnt FROM {source_table} GROUP BY category",
-    "cluster": "auto"  // optional: "auto", null, or cluster name
+    "primary_key": "id",  // optional: column for backfill pagination (default: "id")
+    "cluster": "auto"     // optional: "auto", null, or cluster name
   }
 
   Creates a new materialized view with two-phase backfill.
+  Backfill always processes in descending order on the primary_key column.
   """
   def create(conn) do
     case MVManager.create(conn.body_params) do
@@ -195,11 +197,13 @@ defmodule Shirath.Controllers.MVController do
       source_table: job.source_table,
       target_table: job.target_table,
       distributed_table: job.distributed_table,
+      primary_key: job.primary_key,
       status: job.status,
       cluster_name: job.cluster_name,
       cutoff_id: job.cutoff_id,
       total_rows: job.total_rows,
       processed_rows: job.processed_rows,
+      last_processed_id: job.last_processed_id,
       progress_percent: MVJob.progress_percent(job),
       error_message: job.error_message,
       inserted_at: job.inserted_at,

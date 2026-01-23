@@ -7,6 +7,7 @@ defmodule Shirath.ObanRepo.Migrations.CreateMvJobs do
       add :source_table, :string, null: false
       add :target_table, :string, null: false
       add :distributed_table, :string
+      add :primary_key, :string, null: false, default: "id"
 
       add :status, :string, null: false, default: "pending"
       # Status values: pending, creating, backfilling, optimizing, completed, failed, paused

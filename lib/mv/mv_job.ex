@@ -12,6 +12,7 @@ defmodule Shirath.MV.MVJob do
     field(:source_table, :string)
     field(:target_table, :string)
     field(:distributed_table, :string)
+    field(:primary_key, :string, default: "id")
 
     field(:status, :string, default: "pending")
 
@@ -34,7 +35,7 @@ defmodule Shirath.MV.MVJob do
   end
 
   @required_fields ~w(name source_table target_table config)a
-  @optional_fields ~w(distributed_table status cluster_name nodes cutoff_id total_rows processed_rows last_processed_id error_message)a
+  @optional_fields ~w(distributed_table primary_key status cluster_name nodes cutoff_id total_rows processed_rows last_processed_id error_message)a
 
   def changeset(mv_job, attrs) do
     mv_job

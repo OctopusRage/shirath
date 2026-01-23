@@ -34,6 +34,7 @@ defmodule Mix.Tasks.Shirath.Mv do
       --engine ENGINE    MergeTree engine, e.g. "SummingMergeTree()" (required)
       --order-by COLS    ORDER BY columns, comma-separated (required)
       --query SQL        SELECT query with {source_table} placeholder (required)
+      --primary-key COL  Column to use for backfill pagination (default: "id")
       --cluster NAME     Cluster name, "auto" for auto-detect, omit for single-node
 
   ## Notes
@@ -58,6 +59,7 @@ defmodule Mix.Tasks.Shirath.Mv do
     engine: :string,
     order_by: :string,
     query: :string,
+    primary_key: :string,
     cluster: :string
   ]
 
@@ -108,6 +110,9 @@ defmodule Mix.Tasks.Shirath.Mv do
     # Parse order_by into list
     order_by = opts[:order_by] |> String.split(",") |> Enum.map(&String.trim/1)
 
+    # Primary key for backfill pagination (default: id)
+    primary_key = opts[:primary_key] || "id"
+
     # Infer columns from query (basic parsing)
     columns = infer_columns_from_query(opts[:query])
 
@@ -123,6 +128,7 @@ defmodule Mix.Tasks.Shirath.Mv do
       "order_by" => order_by,
       "columns" => columns,
       "select_query" => opts[:query],
+      "primary_key" => primary_key,
       "cluster" => opts[:cluster]
     }
 
@@ -130,6 +136,7 @@ defmodule Mix.Tasks.Shirath.Mv do
     Mix.shell().info("  Source table: #{opts[:source]}")
     Mix.shell().info("  Engine: #{opts[:engine]}")
     Mix.shell().info("  Order by: #{Enum.join(order_by, ", ")}")
+    Mix.shell().info("  Primary key: #{primary_key} (backfill pagination, descending)")
     Mix.shell().info("  Cluster: #{opts[:cluster] || "single-node"}")
     Mix.shell().info("")
 
