@@ -9,18 +9,25 @@ defmodule Shirath.Controllers.BackfillController do
 
   @doc """
   POST /api/backfill
-  Body: { "tables": ["users", "orders"] }
-  Or:   { "all": true }
+  Body: {
+    "tables": ["users", "orders"],
+    "ordering_column": "created_at"  // optional, defaults to primary key
+  }
+  Or: { "all": true, "ordering_column": "id" }
 
   Starts backfill jobs for the specified tables.
+  Data is always fetched in descending order by ordering_column.
   """
   def create(conn) do
-    case conn.body_params do
+    params = conn.body_params
+    opts = build_opts(params)
+
+    case params do
       %{"all" => true} ->
-        start_all_backfill(conn)
+        start_all_backfill(conn, opts)
 
       %{"tables" => tables} when is_list(tables) ->
-        start_backfill(conn, tables)
+        start_backfill(conn, tables, opts)
 
       _ ->
         conn
@@ -51,6 +58,8 @@ defmodule Shirath.Controllers.BackfillController do
           id: job.id,
           source_table: job.source_table,
           dest_table: job.dest_table,
+          primary_key: job.primary_key,
+          ordering_column: job.ordering_column,
           status: job.status,
           total_rows: job.total_rows,
           processed_rows: job.processed_rows,
@@ -84,6 +93,7 @@ defmodule Shirath.Controllers.BackfillController do
           source_table: job.source_table,
           dest_table: job.dest_table,
           primary_key: job.primary_key,
+          ordering_column: job.ordering_column,
           status: job.status,
           total_rows: job.total_rows,
           processed_rows: job.processed_rows,
@@ -144,7 +154,7 @@ defmodule Shirath.Controllers.BackfillController do
 
   # Private functions
 
-  defp start_backfill(conn, tables) do
+  defp start_backfill(conn, tables, opts) do
     # Validate tables exist in config
     config_tables = MapConfig.get_tables()
     invalid_tables = Enum.filter(tables, &(&1 not in config_tables))
@@ -161,11 +171,16 @@ defmodule Shirath.Controllers.BackfillController do
         })
       )
     else
-      case Backfill.start(tables) do
+      case Backfill.start(tables, opts) do
         {:ok, jobs} ->
           response =
             Enum.map(jobs, fn job ->
-              %{id: job.id, source_table: job.source_table, status: job.status}
+              %{
+                id: job.id,
+                source_table: job.source_table,
+                ordering_column: job.ordering_column,
+                status: job.status
+              }
             end)
 
           conn
@@ -188,9 +203,21 @@ defmodule Shirath.Controllers.BackfillController do
     end
   end
 
-  defp start_all_backfill(conn) do
+  defp start_all_backfill(conn, opts) do
     tables = MapConfig.get_tables() |> Enum.uniq()
-    start_backfill(conn, tables)
+    start_backfill(conn, tables, opts)
+  end
+
+  defp build_opts(params) do
+    opts = []
+
+    opts =
+      if params["ordering_column"],
+        do: [{:ordering_column, params["ordering_column"]} | opts],
+        else: opts
+
+    opts = if params["batch_size"], do: [{:batch_size, params["batch_size"]} | opts], else: opts
+    opts
   end
 
   defp calculate_progress(%{total_rows: nil}), do: nil

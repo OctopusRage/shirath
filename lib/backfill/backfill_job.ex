@@ -6,6 +6,7 @@ defmodule Shirath.Backfill.BackfillJob do
     field(:source_table, :string)
     field(:dest_table, :string)
     field(:primary_key, :string, default: "id")
+    field(:ordering_column, :string, default: "id")
     field(:total_rows, :integer)
     field(:processed_rows, :integer, default: 0)
     field(:last_processed_id, :integer)
@@ -19,6 +20,7 @@ defmodule Shirath.Backfill.BackfillJob do
   @required_fields [:source_table, :dest_table]
   @optional_fields [
     :primary_key,
+    :ordering_column,
     :total_rows,
     :processed_rows,
     :last_processed_id,

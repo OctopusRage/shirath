@@ -48,20 +48,23 @@ defmodule Workers.BackfillWorker do
     %{
       id: job_id,
       source_table: table,
-      primary_key: pk,
-      last_processed_id: last_id,
+      ordering_column: ordering_col,
+      last_processed_id: last_value,
       batch_size: batch_size,
       processed_rows: processed_rows
     } = job
+
+    # Use ordering_column for pagination, fallback to primary_key for backwards compatibility
+    order_col = ordering_col || job.primary_key || "id"
 
     # Mark as running
     {:ok, job} = Backfill.update_job(job, %{status: "running"})
 
     Logger.info(
-      "[Backfill] Processing #{table} | last_id: #{last_id} | processed: #{processed_rows}"
+      "[Backfill] Processing #{table} | order_by: #{order_col} DESC | last_value: #{last_value} | processed: #{processed_rows}"
     )
 
-    case Backfill.fetch_batch(table, pk, last_id, batch_size) do
+    case Backfill.fetch_batch(table, order_col, last_value, batch_size) do
       {:ok, []} ->
         # No more rows, mark as completed
         Logger.info("[Backfill] Completed #{table} | total processed: #{processed_rows}")
@@ -72,10 +75,10 @@ defmodule Workers.BackfillWorker do
         # Push to ingestor
         Ingestor.push_messages(table, rows)
 
-        # Calculate new last_processed_id (minimum id in this batch since DESC order)
-        new_last_id =
+        # Calculate new last_processed_id (minimum value in this batch since DESC order)
+        new_last_value =
           rows
-          |> Enum.map(&Map.get(&1, String.to_atom(pk)))
+          |> Enum.map(&Map.get(&1, String.to_atom(order_col)))
           |> Enum.min()
 
         new_processed = processed_rows + length(rows)
@@ -83,12 +86,12 @@ defmodule Workers.BackfillWorker do
         # Update job progress
         {:ok, updated_job} =
           Backfill.update_job(job, %{
-            last_processed_id: new_last_id,
+            last_processed_id: new_last_value,
             processed_rows: new_processed
           })
 
         Logger.info(
-          "[Backfill] #{table} | batch: #{length(rows)} | new_last_id: #{new_last_id} | total: #{new_processed}"
+          "[Backfill] #{table} | batch: #{length(rows)} | new_last_value: #{new_last_value} | total: #{new_processed}"
         )
 
         # Enqueue next batch

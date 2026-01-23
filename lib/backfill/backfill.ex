@@ -27,6 +27,10 @@ defmodule Shirath.Backfill do
   @doc """
   Starts backfill for the given tables.
   Returns {:ok, jobs} or {:error, reason}.
+
+  Options:
+    - :batch_size - Number of rows per batch (default: 5000)
+    - :ordering_column - Column to use for pagination, descending order (default: primary key)
   """
   def start(tables, opts \\ []) when is_list(tables) do
     batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
@@ -34,7 +38,7 @@ defmodule Shirath.Backfill do
     results =
       tables
       |> Enum.map(fn table ->
-        case create_or_resume_job(table, batch_size) do
+        case create_or_resume_job(table, batch_size, opts) do
           {:ok, job} ->
             enqueue_worker(job)
             {:ok, job}
@@ -187,13 +191,13 @@ defmodule Shirath.Backfill do
   end
 
   @doc """
-  Gets the maximum primary key value for a table.
+  Gets the maximum value for a column in a table.
   """
-  def get_max_id(table, primary_key) do
-    if valid_identifier?(table) and valid_identifier?(primary_key) do
-      case Repo.query("SELECT MAX(#{primary_key}) FROM #{table}", []) do
+  def get_max_value(table, column) do
+    if valid_identifier?(table) and valid_identifier?(column) do
+      case Repo.query("SELECT MAX(#{column}) FROM #{table}", []) do
         {:ok, %{rows: [[nil]]}} -> {:ok, nil}
-        {:ok, %{rows: [[max_id]]}} -> {:ok, max_id}
+        {:ok, %{rows: [[max_value]]}} -> {:ok, max_value}
         {:error, error} -> {:error, error}
       end
     else
@@ -202,19 +206,25 @@ defmodule Shirath.Backfill do
   end
 
   @doc """
-  Fetches a batch of rows for backfilling.
-  Returns rows in DESC order by primary key.
+  Gets the maximum primary key value for a table.
+  Deprecated: Use get_max_value/2 instead.
   """
-  def fetch_batch(table, primary_key, last_id, batch_size) do
-    if valid_identifier?(table) and valid_identifier?(primary_key) do
+  def get_max_id(table, primary_key), do: get_max_value(table, primary_key)
+
+  @doc """
+  Fetches a batch of rows for backfilling.
+  Returns rows in DESC order by ordering_column.
+  """
+  def fetch_batch(table, ordering_column, last_value, batch_size) do
+    if valid_identifier?(table) and valid_identifier?(ordering_column) do
       query =
-        if is_nil(last_id) do
-          "SELECT * FROM #{table} ORDER BY #{primary_key} DESC LIMIT $1"
+        if is_nil(last_value) do
+          "SELECT * FROM #{table} ORDER BY #{ordering_column} DESC LIMIT $1"
         else
-          "SELECT * FROM #{table} WHERE #{primary_key} < $1 ORDER BY #{primary_key} DESC LIMIT $2"
+          "SELECT * FROM #{table} WHERE #{ordering_column} < $1 ORDER BY #{ordering_column} DESC LIMIT $2"
         end
 
-      params = if is_nil(last_id), do: [batch_size], else: [last_id, batch_size]
+      params = if is_nil(last_value), do: [batch_size], else: [last_value, batch_size]
 
       case Repo.query(query, params) do
         {:ok, result} ->
@@ -256,7 +266,7 @@ defmodule Shirath.Backfill do
   # Private Functions
   # --------------------------------------------------------------------------
 
-  defp create_or_resume_job(table, batch_size) do
+  defp create_or_resume_job(table, batch_size, opts \\ []) do
     # Check if there's an existing active job for this table
     case get_active_job(table) do
       %BackfillJob{status: "paused"} = job ->
@@ -269,11 +279,11 @@ defmodule Shirath.Backfill do
 
       nil ->
         # Create new job
-        create_job(table, batch_size)
+        create_job(table, batch_size, opts)
     end
   end
 
-  defp create_job(table, batch_size) do
+  defp create_job(table, batch_size, opts \\ []) do
     # Get mapping config for this table
     case MapConfig.get_by_source_tbl(table) do
       [] ->
@@ -283,15 +293,20 @@ defmodule Shirath.Backfill do
         dest_table = config.dest_table
 
         with {:ok, primary_key} <- detect_primary_key(table),
-             {:ok, total_rows} <- get_row_count(table),
-             {:ok, max_id} <- get_max_id(table, primary_key) do
+             {:ok, total_rows} <- get_row_count(table) do
+          # Allow custom ordering_column, default to primary_key
+          ordering_column = Keyword.get(opts, :ordering_column) || primary_key
+
+          {:ok, max_value} = get_max_value(table, ordering_column)
+
           attrs = %{
             source_table: table,
             dest_table: dest_table,
             primary_key: primary_key,
+            ordering_column: ordering_column,
             total_rows: total_rows,
             batch_size: batch_size,
-            last_processed_id: if(max_id, do: max_id + 1, else: nil),
+            last_processed_id: if(max_value, do: increment_value(max_value), else: nil),
             status: "pending"
           }
 
@@ -301,6 +316,11 @@ defmodule Shirath.Backfill do
         end
     end
   end
+
+  # Increment value for setting initial last_processed_id
+  # Handles both integers and other types
+  defp increment_value(value) when is_integer(value), do: value + 1
+  defp increment_value(value), do: value
 
   defp enqueue_worker(%BackfillJob{id: id}) do
     %{backfill_job_id: id}
