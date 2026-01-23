@@ -1,0 +1,109 @@
+# Complete development stack for testing Shirath CDC
+# Usage: docker compose -f docker-compose.dev.yml up
+#
+# This starts:
+#   - PostgreSQL (with logical replication enabled + sample data)
+#   - ClickHouse (with schema pre-configured)
+#   - Shirath (CDC bridge)
+#
+# No ports are exposed to avoid conflicts with local databases.
+# Use `docker exec` to interact with the containers (see examples below).
+#
+# Test CDC by inserting data into PostgreSQL:
+#   docker exec -it shirath-postgres psql -U postgres -d eshop -c \
+#     "INSERT INTO products (name, price, category, sku) VALUES ('Test Product', 9.99, 'Test', 'TEST-001');"
+#
+# Verify it appears in ClickHouse:
+#   docker exec -it shirath-clickhouse clickhouse-client --query \
+#     "SELECT * FROM analytics.products WHERE sku = 'TEST-001';"
+#
+# Access Shirath API (backfill, etc.):
+#   docker exec -it shirath curl -s http://localhost:4000/api/backfill
+
+version: "3.8"
+
+services:
+  # PostgreSQL with logical replication enabled
+  postgres:
+    image: postgres:15
+    container_name: shirath-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eshop
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-postgres.sql:/docker-entrypoint-initdb.d/01-init.sql:z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d eshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ClickHouse for analytics
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: shirath-clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse_schema.sql:/docker-entrypoint-initdb.d/init.sql:z
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Shirath CDC Bridge
+  shirath:
+    build:
+      context: ..
+      dockerfile: Dockerfile.dev
+    container_name: shirath
+    environment:
+      # ClickHouse connection
+      CH_CONNECTION: "http://default:password@clickhouse:8123/analytics"
+      # Source database (PostgreSQL)
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: eshop
+      DB_HOST: postgres
+      # Oban job queue database
+      DB_JOB_USERNAME: postgres
+      DB_JOB_PASSWORD: postgres
+      DB_JOB_NAME: shirath
+      DB_JOB_HOST: postgres
+      # CDC settings
+      CDC_PUBLICATION: eshop_pub
+      CDC_SLOT: eshop_slot
+      MAPPER_FILE: /app/mapper.json
+      MIX_ENV: prod
+    volumes:
+      - ./mapper.sample.json:/app/mapper.json:ro,z
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  clickhouse_data:

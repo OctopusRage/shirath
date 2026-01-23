@@ -1,0 +1,47 @@
+# Development Dockerfile for Shirath
+# Used by samples/docker-compose.dev.yml for quick local testing
+
+FROM elixir:1.17-otp-27-slim
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    make \
+    gcc \
+    g++ \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install hex and rebar
+RUN mix local.hex --force && mix local.rebar --force
+
+WORKDIR /app
+
+# Copy dependency files first for better caching
+COPY mix.exs mix.lock ./
+
+# Set environment
+ENV MIX_ENV=prod
+
+# Fetch dependencies
+RUN mix deps.get --only prod
+RUN mix deps.compile
+
+# Copy application code
+COPY . .
+
+# Compile the application
+RUN mix compile
+
+# Create data_files directory
+RUN mkdir -p data_files
+
+# Copy entrypoint script
+COPY samples/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+EXPOSE 4000
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["mix", "run", "--no-halt"]
