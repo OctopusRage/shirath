@@ -1,6 +1,7 @@
 defmodule Shirath.Router do
   alias Shirath.Controllers.ChController
   alias Shirath.Controllers.BackfillController
+  alias Shirath.Controllers.MVController
   use Plug.Router
 
   plug(:match)
@@ -45,5 +46,30 @@ defmodule Shirath.Router do
 
   post "/api/backfill/:id/resume" do
     BackfillController.resume(conn, String.to_integer(id))
+  end
+
+  # Materialized view endpoints
+  get "/api/mv" do
+    MVController.index(conn)
+  end
+
+  post "/api/mv" do
+    MVController.create(conn)
+  end
+
+  get "/api/mv/:name" do
+    MVController.show(conn, name)
+  end
+
+  post "/api/mv/:name/pause" do
+    MVController.pause(conn, name)
+  end
+
+  post "/api/mv/:name/resume" do
+    MVController.resume(conn, name)
+  end
+
+  delete "/api/mv/:name" do
+    MVController.delete(conn, name)
   end
 end
