@@ -266,7 +266,7 @@ defmodule Shirath.Backfill do
   # Private Functions
   # --------------------------------------------------------------------------
 
-  defp create_or_resume_job(table, batch_size, opts \\ []) do
+  defp create_or_resume_job(table, batch_size, opts) do
     # Check if there's an existing active job for this table
     case get_active_job(table) do
       %BackfillJob{status: "paused"} = job ->
@@ -283,7 +283,7 @@ defmodule Shirath.Backfill do
     end
   end
 
-  defp create_job(table, batch_size, opts \\ []) do
+  defp create_job(table, batch_size, opts) do
     # Get mapping config for this table
     case MapConfig.get_by_source_tbl(table) do
       [] ->
