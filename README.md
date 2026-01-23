@@ -15,7 +15,7 @@ Shirath is a Change Data Capture (CDC) bridge that streams changes from PostgreS
 └────────────┘                  └──────────┘                    └────────────┘
 ```
 
-Shirath uses PostgreSQL's logical replication with the `pg_output` plugin to capture INSERT, UPDATE, and DELETE operations. Changes are batched using Broadway for efficient processing and stored in an Oban queue for reliable delivery to ClickHouse.
+Shirath uses PostgreSQL's logical replication with the `pg_output` plugin to capture INSERT, UPDATE, and DELETE operations. Changes are batched using [Broadway](https://github.com/dashbitco/broadway) for efficient processing and stored in an [Oban](https://github.com/oban-bg/oban) queue for reliable delivery to ClickHouse.
 
 ## Why Shirath?
 
@@ -23,17 +23,17 @@ Shirath uses PostgreSQL's logical replication with the `pg_output` plugin to cap
 
 **Built on the BEAM** - Powered by Elixir and the Erlang VM, Shirath inherits battle-tested concurrency primitives. Lightweight processes handle thousands of concurrent operations without the memory overhead of OS threads.
 
-**Smart Batching** - Instead of inserting rows one-by-one, Shirath uses Broadway to batch changes into files, then processes them in optimized bulk inserts to ClickHouse. This dramatically reduces network overhead and leverages ClickHouse's strength in batch operations.
+**Smart Batching** - Instead of inserting rows one-by-one, Shirath uses [Broadway](https://github.com/dashbitco/broadway) to batch changes into files, then processes them in optimized bulk inserts to ClickHouse. This dramatically reduces network overhead and leverages ClickHouse's strength in batch operations.
 
 **No Kafka Required** - Unlike many CDC solutions that require Kafka or other message brokers, Shirath connects directly to PostgreSQL's WAL stream. Fewer moving parts means less infrastructure to manage and fewer points of failure.
 
-**Fault Tolerant** - Changes are persisted to an Oban queue backed by PostgreSQL. If ClickHouse is temporarily unavailable, no data is lost. Processing resumes automatically when connectivity is restored.
+**Fault Tolerant** - Changes are persisted to an [Oban](https://github.com/oban-bg/oban) queue backed by PostgreSQL. If ClickHouse is temporarily unavailable, no data is lost. Processing resumes automatically when connectivity is restored.
 
 ## Features
 
 - Real-time CDC from PostgreSQL to ClickHouse
 - Configurable table mapping with field transformation
-- Fault-tolerant with persistent queue (Oban)
+- Fault-tolerant with persistent queue ([Oban](https://github.com/oban-bg/oban))
 - Batched inserts for optimal ClickHouse performance
 - Support for multiple source tables to single destination
 - Minimal resource footprint (2 vCPU / 2GB RAM)
@@ -206,7 +206,7 @@ When you start Shirath, it begins capturing changes from the current WAL positio
 - Auto-detects primary key from PostgreSQL
 - Processes rows in descending order (newest first)
 - Batches of 5,000 rows for optimal performance
-- Retryable via Oban - failed batches are automatically retried
+- Retryable via [Oban](https://github.com/oban-bg/oban) - failed batches are automatically retried
 - Progress is persisted - can resume after restarts
 
 ### Mix Task
