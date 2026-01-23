@@ -345,6 +345,8 @@ mix format
 iex -S mix
 ```
 
+For a complete local development setup with sample data and schemas, see the [samples](samples/) folder.
+
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
